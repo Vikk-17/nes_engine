@@ -1,8 +1,18 @@
 #![allow(unused)]
+
+// Bit Indexing
+const CARRY_FLAG: u8 = 0b0000_0001;  // Bit 0
+const ZERO_FLAG: u8 = 0b0000_0010;  // Bit 1
+const INTERRUPT_FLAG: u8 = 0b0000_0100;  // Bit 2
+const DECIMAL_FLAG: u8 = 0b0000_1000;  // Bit 3
+const BREAK_FLAG: u8 = 0b0001_0000;  // Bit 4
+const OVERFLOW_FLAG: u8 = 0b0100_0000;  // Bit 6
+const NEGATIVE_FLAG: u8 = 0b1000_0000;  // Bit 7
+
 pub struct CPU {
 
     /*
-     * 8 bit registes
+     * 8 bit register
      * 8 bit for status 
      * 16 bits program counter
      */
@@ -29,21 +39,34 @@ impl CPU {
     }
 
     fn tax(&mut self) {
+        // copies the current content of accumulator into the x register
         self.register_x = self.register_a;
+        // sets the zero and negative flags as appropriate
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    fn inx(&mut self) {
+        self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
+        // ZERO_FLAG (Z): Set if result == 0
         if result == 0 {
-            self.status = self.status | 0b0000_0010;
+            // set Bit 1
+            self.status |= ZERO_FLAG;
         } else {
-            self.status = self.status & 0b1111_1101;
+            // clear Bit 1
+            self.status &= !ZERO_FLAG;
         }
 
-        if result & 0b1000_0000 != 0 {
-            self.status = self.status | 0b1000_0000;
+        // NEGATIVE_FLAG (N): Set if bit 7 of result is set
+        if result & NEGATIVE_FLAG != 0 {
+            // set Bit 7
+            self.status |= NEGATIVE_FLAG;
         } else {
-            self.status = self.status & 0b0111_1111;
+            // clear Bit 7
+            self.status &= !NEGATIVE_FLAG;
         }
     }
 
@@ -64,8 +87,10 @@ impl CPU {
                     self.lda(param);
                 }
 
-                // tax (0xAA) opscode
+                // TAX (0xAA) opscode
                 0xAA => self.tax(), 
+
+                0xE8 => self.inx(),
 
                 // BRK (0x00) opcode implementation
                 0x00 => return,
@@ -104,6 +129,23 @@ mod test {
         cpu.interpret(vec![0xaa, 0x00]);
 
         assert_eq!(cpu.register_x, 10);
+    }
+
+    #[test]
+    fn test_5_ops_working_together() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
+
+        assert_eq!(cpu.register_x, 0xc1)
+    }
+
+    #[test]
+    fn test_inx_overflow() {
+        let mut cpu = CPU::new();
+        cpu.register_x = 0xff;
+        cpu.interpret(vec![0xe8, 0xe8, 0x00]);
+
+        assert_eq!(cpu.register_x, 1)
     }
 }
 
