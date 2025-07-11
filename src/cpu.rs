@@ -21,6 +21,7 @@ pub struct CPU {
     pub register_x: u8,
     pub status: u8, 
     pub program_counter: u16, 
+    memory: [u8; 0xFFFF],
 }
 
 impl CPU {
@@ -29,10 +30,42 @@ impl CPU {
             register_a: 0,
             register_x: 0,
             status: 0,
-            program_counter: 0
+            program_counter: 0,
+            memory: [0; 0xFFFF], // memory: [expr, N]
         }
     }
-    
+   
+    fn memory_read(&self, addr: u16) -> u8 {
+        self.memory[addr as usize]
+    }
+   
+    fn memory_write(&mut self, addr: u16, data: u8) {
+        self.memory[addr as usize] = data;
+    }
+
+    pub fn load_and_run(&mut self, program: Vec<u8>) {
+        self.load(program);
+        self.run()
+    }
+
+    pub fn load(&mut self, program: Vec<u8>) {
+        self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program[..]);
+        self.program_counter = 0x8000;
+    }
+
+
+
+    pub fn run(&mut self) {
+        loop {
+            let opscode = self.memory_read(self.program_counter);
+            self.program_counter += 1;
+            
+            // match opscode {
+            //     // ..
+            // }
+        }
+    }
+
     fn lda(&mut self, value: u8) {
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
