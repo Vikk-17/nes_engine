@@ -19,6 +19,7 @@ pub struct CPU {
 
     pub register_a: u8, 
     pub register_x: u8,
+    pub register_y: u8,
     pub status: u8, 
     pub program_counter: u16, 
     memory: [u8; 0xFFFF],
@@ -29,6 +30,7 @@ impl CPU {
         CPU {
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0,
             program_counter: 0,
             memory: [0; 0xFFFF], // memory: [expr, N]
@@ -54,6 +56,20 @@ impl CPU {
     }
 
 
+    pub fn mem_read_u16(&mut self, pos: u16) -> u16 {
+        let low = self.memory_read(pos) as u16;
+        let high = self.memory_read(pos + 1) as u16;
+
+        (high << 8) | (low as u16)
+    }
+
+
+    pub fn mem_write_u16(&mut self, pos: u16, data: u16) {
+        let high = (data >> 8) as u8;
+        let low = (data & 0xff) as u8;
+        self.memory_write(pos, low);
+        self.memory_write(pos + 1, high);
+    }
 
     pub fn run(&mut self) {
         loop {
