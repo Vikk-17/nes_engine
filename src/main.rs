@@ -6,6 +6,7 @@ pub mod opcodes;
 pub mod ppu;
 pub mod render;
 pub mod trace;
+pub mod apu;
 
 use bus::Bus;
 use cartridge::Rom;
@@ -20,6 +21,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 use std::collections::HashMap;
 use std::path::Path;
+use std::io::{self, Write};
 
 #[macro_use]
 extern crate lazy_static;
@@ -39,22 +41,85 @@ struct Args {
     /// List available ROM files
     #[arg(short, long)]
     list: bool,
+    
+    /// Disable audio
+    #[arg(short, long)]
+    no_audio: bool,
+    
+    /// Interactive ROM selection
+    #[arg(short, long)]
+    interactive: bool,
 }
 
-fn list_available_roms() {
-    println!("Available ROM files:");
+fn list_available_roms() -> Vec<String> {
     let rom_files = ["pacman.nes", "snake.nes", "Super.nes"];
-    let mut found_any = false;
+    let mut available_roms = Vec::new();
     
     for file in &rom_files {
         if Path::new(file).exists() {
-            println!("  {}", file);
-            found_any = true;
+            available_roms.push(file.to_string());
         }
     }
     
-    if !found_any {
+    available_roms
+}
+
+fn print_available_roms() {
+    println!("Available ROM files:");
+    let roms = list_available_roms();
+    
+    if roms.is_empty() {
         println!("  No ROM files found in current directory");
+        return;
+    }
+    
+    for (i, rom) in roms.iter().enumerate() {
+        println!("  {}: {}", i + 1, rom);
+    }
+}
+
+fn interactive_rom_selection() -> Option<String> {
+    let roms = list_available_roms();
+    
+    if roms.is_empty() {
+        println!("No ROM files found in current directory!");
+        return None;
+    }
+    
+    println!("\n=== NES ROM Selection ===");
+    println!("Available ROM files:");
+    
+    for (i, rom) in roms.iter().enumerate() {
+        println!("  {}: {}", i + 1, rom);
+    }
+    
+    println!("  0: Exit");
+    println!();
+    
+    loop {
+        print!("Select a ROM file (0-{}): ", roms.len());
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        
+        let input = input.trim();
+        
+        if input == "0" {
+            println!("Exiting...");
+            return None;
+        }
+        
+        match input.parse::<usize>() {
+            Ok(choice) if choice >= 1 && choice <= roms.len() => {
+                let selected_rom = roms[choice - 1].clone();
+                println!("Selected: {}", selected_rom);
+                return Some(selected_rom);
+            }
+            _ => {
+                println!("Invalid selection. Please enter a number between 0 and {}.", roms.len());
+            }
+        }
     }
 }
 
@@ -78,17 +143,27 @@ fn main() {
     let args = Args::parse();
     
     if args.list {
-        list_available_roms();
+        print_available_roms();
         return;
     }
     
-    let rom_file = &args.rom_file;
+    let rom_file = if args.interactive {
+        match interactive_rom_selection() {
+            Some(rom) => rom,
+            None => {
+                println!("No ROM selected. Exiting.");
+                return;
+            }
+        }
+    } else {
+        args.rom_file
+    };
     
     // Check if ROM file exists
-    if !Path::new(rom_file).exists() {
+    if !Path::new(&rom_file).exists() {
         eprintln!("Error: ROM file '{}' not found!", rom_file);
         eprintln!();
-        list_available_roms();
+        print_available_roms();
         std::process::exit(1);
     }
     
@@ -113,7 +188,7 @@ fn main() {
         .unwrap();
 
     //load the game
-    let bytes: Vec<u8> = std::fs::read(rom_file).unwrap();
+    let bytes: Vec<u8> = std::fs::read(&rom_file).unwrap();
     let rom = Rom::new(&bytes).unwrap();
 
     let mut frame = Frame::new();
@@ -130,7 +205,7 @@ fn main() {
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
     // run the game cycle
-    let bus = Bus::new(rom, move |ppu: &NesPPU, joypad: &mut joypad::Joypad| {
+    let mut bus = Bus::new(rom, move |ppu: &NesPPU, joypad: &mut joypad::Joypad| {
         if !paused {
             render::render(ppu, &mut frame);
             texture.update(None, &frame.data, 256 *2 * 3).unwrap();
@@ -219,6 +294,16 @@ fn main() {
             }
         }
     });
+
+    // Initialize audio if not disabled
+    if !args.no_audio {
+        match bus.init_audio(&sdl_context) {
+            Ok(_) => println!("Audio initialized successfully"),
+            Err(e) => eprintln!("Failed to initialize audio: {}", e),
+        }
+    } else {
+        println!("Audio disabled");
+    }
 
     let mut cpu = CPU::new(bus);
     cpu.reset();
